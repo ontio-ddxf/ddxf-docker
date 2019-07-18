@@ -1,0 +1,107 @@
+version: '2'
+
+services:
+  zookeeper:
+    image: wurstmeister/zookeeper:3.4.6
+    container_name: zookeeper
+    expose:
+      - "2181"
+
+  kafka:
+    image: wurstmeister/kafka:2.12-2.3.0
+    container_name: kafka
+    depends_on:
+      - zookeeper
+    ports:
+      - "9092:9092"
+    environment:
+      KAFKA_ADVERTISED_HOST_NAME: kafka
+      KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
+
+  mysql:
+    image: docker.io/mysql:5.7
+    ports:
+      - "33061:3306"
+    command: [
+      '--character-set-server=utf8mb4',
+      '--collation-server=utf8mb4_unicode_ci',
+      '--default-time-zone=+8:00'
+    ]
+    volumes:
+      - ./mysql/init/:/docker-entrypoint-initdb.d
+    environment:
+      MYSQL_DATABASE: data_dealer
+      MYSQL_ROOT_PASSWORD: root
+      MYSQL_ROOT_HOST: '%'
+    restart: always
+
+  es-master:
+    image: elasticsearch:6.4.3
+    container_name: es-master
+    restart: always
+    volumes:
+      - ./es-master/data:/usr/share/elasticsearch/data
+      - ./es-master/conf/elasticsearch.yml:/usr/share/elasticsearch/config/elasticsearch.yml
+      - ./es-master/logs:/usr/share/elasticsearch/logs
+    ports:
+      - "9200:9200"
+      - "9300:9300"
+
+  syncevent2kafka:
+    container_name: syncevent2kafka
+    build: ./syncevent2kafka
+    ports:
+      - "10332:10332"
+    volumes:
+      - ./syncevent2kafka/config/:/config/
+      - ./syncevent2kafka/logs/:/logs/
+    depends_on:
+      - kafka
+      - es-master
+    links:
+      - kafka
+      - es-master
+
+  parseevent2es:
+    container_name: parseevent2es
+    build: ./parseevent2es
+    ports:
+      - "10333:10333"
+    volumes:
+      - ./parseevent2es/config/:/config/
+      - ./parseevent2es/logs/:/logs/
+    depends_on:
+      - syncevent2kafka
+    links:
+      - kafka
+      - es-master
+
+  marketplace-backend:
+    container_name: marketplace-backend
+    build: ./marketplace-backend
+    ports:
+      - "10335:10335"
+    volumes:
+      - ./marketplace-backend/config/:/config/
+      - ./marketplace-backend/logs/:/logs/
+    depends_on:
+      - mysql
+      - parseevent2es
+    links:
+      - mysql
+      - kafka
+      - es-master
+
+  marketplace-dataset:
+    container_name: marketplace-dataset
+    build: ./marketplace-dataset
+    ports:
+      - "10334:10334"
+    volumes:
+      - ./marketplace-dataset/config/:/config/
+      - ./marketplace-dataset/logs/:/logs/
+    depends_on:
+      - marketplace-backend
+    links:
+      - mysql
+      - es-master
