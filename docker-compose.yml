@@ -105,3 +105,15 @@ services:
     links:
       - mysql
       - es-master
+
+  marketplace-web:
+    container_name: marketplace-web
+    build: ./marketplace-web
+    ports:
+      - "80:80"
+    depends_on:
+      - marketplace-dataset
+      - marketplace-backend
+    links:
+      - marketplace-dataset:dataset
+      - marketplace-backend:backend
